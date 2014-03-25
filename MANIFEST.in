@@ -1,0 +1,3 @@
+include bin/esmero
+include Makefile
+include MANIFEST.in
