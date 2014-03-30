@@ -16,3 +16,11 @@ def error(msg):
 def warn(msg):
     "Print a message to the standard error "
     sys.stderr.write(msg)
+
+
+def import_mod(name):
+    "Return a module by string. "
+    mod = __import__(name)
+    for sub in name.split(".")[1:]:
+        mod = getattr(mod, sub)
+    return mod
