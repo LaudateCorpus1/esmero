@@ -48,17 +48,17 @@ def preparse_args_argcomplete(argv, argp, subp, complete):
             return
         arg = argv[index]
         if arg == 'defaults':
-            argv.insert(index, '_')
+            argv.insert(index, '.')
         if argv[index+1] in parsers:
             return
     except IndexError:
         pass
     if complete == ' ':
         if arg in parsers:
-            argv.insert(index, '_')
+            argv.insert(index, '.')
     else:
         if arg in parsers and len(argv) - 1 > index:
-            argv.insert(index, '_')
+            argv.insert(index, '.')
 
 
 def preparse_args(argv, argp, subp):
@@ -74,11 +74,11 @@ def preparse_args(argv, argp, subp):
             index += opt[argv[index]]
         if index == 1 and argv[index][0] == '-':
             argv.insert(index, default)
-            argv.insert(index, '_')
+            argv.insert(index, '.')
             return
         arg = argv[index]
         if arg == 'defaults':
-            argv.insert(index, '_')
+            argv.insert(index, '.')
         if argv[index+1] in parsers:
             return
         if arg not in parsers:
@@ -89,7 +89,7 @@ def preparse_args(argv, argp, subp):
             if arg is None:
                 arg = default
     if arg in parsers:
-        argv.insert(index, '_')
+        argv.insert(index, '.')
 
 
 def parse_options(mod):
@@ -116,8 +116,8 @@ Version:
     argp = argparse.ArgumentParser(formatter_class=raw, version=ver,
                                    description=textwrap.dedent(desc),
                                    epilog=textwrap.dedent(epi))
-    argp.add_argument('inputfile', type=str, default='_', nargs='?',
-                      help='input file to process')
+    argp.add_argument('inputpath', type=str, default='.', nargs='?',
+                      help='input path to build')
     argp.add_argument('--cfg', type=str, dest='cfg_path',
                       metavar='CFG_PATH',
                       help='configuration file directory')

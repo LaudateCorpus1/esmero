@@ -76,14 +76,13 @@ def add_parser(subp, fclass):
                       help='print config file and exit')
 
 
-def read_config():
+def read_config(path='.'):
     """Read a configuration file."""
     name = 'esmero.config'
     if CONFIG['cfg_user']:
         path = os.environ['HOME']
         name = '.esmero.config'
     elif CONFIG['cfg_path'] is None:
-        path = '.'
         if not os.path.exists(name):
             if 'ESMERO_CONFIG_PATH' in os.environ:
                 path = os.environ['ESMERO_CONFIG_PATH']
