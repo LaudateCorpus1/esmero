@@ -61,8 +61,7 @@ def gather_lexor_files(path, bfiles):
     """Get a dictionary of lexor files and configuration files. """
     files = list()
     web = list()
-    cfg = config.read_config(path)
-    L.info("read configuration from %r: %r", path, cfg)
+    cfg = config.read_config()
     if 'skip-dir' in cfg:
         rskip = re.compile(cfg['skip-dir'])
     else:

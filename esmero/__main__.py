@@ -132,6 +132,7 @@ def run():
     if arg.debug:
         L.enable()
 
+    config.CONFIG['cfg_path'] = arg.cfg_path
     config.CONFIG['arg'] = arg
     try:
         if L.on:

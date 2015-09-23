@@ -79,6 +79,7 @@ def read_config(path=None):
         cfg_file = {}
     CONFIG['name'] = name
     CONFIG['path'] = path
+    L.info("read configuration from %r: %r", path, cfg_file)
     return cfg_file
 
 
