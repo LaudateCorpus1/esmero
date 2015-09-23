@@ -182,14 +182,14 @@ def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg
     doc.meta['__THEME__'] = theme[ver].clone_node(True)
     doc.meta['__ROOT__'] = cfg['esmero']['root']
     converter = core.Converter('lexor', 'html', 'default')
-    #converter.convert(doc)
-    #if parser.log:
-    #    converter.update_log(parser.log, False)
-    #doc, log = converter.pop()
-    # if log:
-    #     sys.stderr.write('\n')
-    #     logwriter.write(log, sys.stderr)
-    #     sys.stderr.write('... ')
+    converter.convert(doc)
+    if parser.log:
+       converter.update_log(parser.log, False)
+    doc, log = converter.pop()
+    if log:
+        sys.stderr.write('\n')
+        logwriter.write(log, sys.stderr)
+        sys.stderr.write('... ')
     docwriter.write(doc, lex_file[:-4] + '.html', 'w')
     namespace = core.get_converter_namespace()
     namespace.clear()
