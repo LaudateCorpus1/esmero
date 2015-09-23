@@ -7,24 +7,26 @@ To run esmero from the command line do the following:
 Use the option --help for more information.
 
 """
-
-import os
 import sys
 import argparse
 import textwrap
 import os.path as pt
 from glob import iglob
 from esmero.__version__ import VERSION
-from esmero.command import config, import_mod
-try:
-    import argcomplete
-except ImportError:
-    pass
+from esmero.command import config, import_mod, EsmeroError
+from esmero.util.logging import L
+
+
+class ConfigPathAction(argparse.Action):
+    """Derived argparse Action class store the configuration path."""
+    def __call__(self, parser, namespace, values, option_string=None):
+        namespace.cfg_path = values
+        config.CONFIG['cfg_path'] = values
 
 
 # pylint: disable=W0212
 def get_argparse_options(argp):
-    "Helper function to preparse the arguments. "
+    "Helper function to pre-parse the arguments. "
     opt = dict()
     for action in argp._optionals._actions:
         for key in action.option_strings:
@@ -33,32 +35,6 @@ def get_argparse_options(argp):
             else:
                 opt[key] = 2
     return opt
-
-
-def preparse_args_argcomplete(argv, argp, subp, complete):
-    """Pre-parse the arguments for argcomplete. """
-    opt = get_argparse_options(argp)
-    parsers = subp.choices.keys()
-    index = 1
-    arg = None
-    try:
-        while argv[index] in opt:
-            index += opt[argv[index]]
-        if index == 1 and argv[index][0] == '-':
-            return
-        arg = argv[index]
-        if arg == 'defaults':
-            argv.insert(index, '.')
-        if argv[index+1] in parsers:
-            return
-    except IndexError:
-        pass
-    if complete == ' ':
-        if arg in parsers:
-            argv.insert(index, '.')
-    else:
-        if arg in parsers and len(argv) - 1 > index:
-            argv.insert(index, '.')
 
 
 def preparse_args(argv, argp, subp):
@@ -118,11 +94,15 @@ Version:
                                    epilog=textwrap.dedent(epi))
     argp.add_argument('inputpath', type=str, default='.', nargs='?',
                       help='input path to build')
+    argp.add_argument('--debug', action='store_true', dest='debug',
+                      help='log events')
+    argp.add_argument('--debug-path', type=str, dest='debug_path',
+                      metavar='PATH', default=None,
+                      help='directory to write lexor debug logs')
     argp.add_argument('--cfg', type=str, dest='cfg_path',
-                      metavar='CFG_PATH',
+                      metavar='CFG_PATH', default='.',
+                      action=ConfigPathAction,
                       help='configuration file directory')
-    argp.add_argument('--cfg-user', action='store_true', dest='cfg_user',
-                      help='select user configuration file. Overides --cfg')
     subp = argp.add_subparsers(title='subcommands',
                                dest='parser_name',
                                help='additional help',
@@ -131,16 +111,6 @@ Version:
     names.sort()
     for name in names:
         mod[name].add_parser(subp, raw)
-    try:
-        if 'COMP_LINE' in os.environ:
-            argv = os.environ['COMP_LINE'].split()
-            last = ' ' if os.environ['COMP_LINE'][-1] == ' ' else ''
-            preparse_args_argcomplete(argv, argp, subp, last)
-            os.environ['COMP_LINE'] = ' '.join(argv) + last
-            os.environ['COMP_POINT'] = str(len(os.environ['COMP_LINE']))
-        argcomplete.autocomplete(argp)
-    except NameError:
-        pass
     preparse_args(sys.argv, argp, subp)
     return argp.parse_args()
 
@@ -149,17 +119,41 @@ def run():
     """Run esmero from the command line. """
     mod = dict()
     rootpath = pt.split(pt.abspath(__file__))[0]
+
     mod_names = [name for name in iglob('%s/command/*.py' % rootpath)]
     for name in mod_names:
         tmp_name = pt.split(name)[1][:-3]
         tmp_mod = import_mod('esmero.command.%s' % tmp_name)
         if hasattr(tmp_mod, 'add_parser'):
             mod[tmp_name] = tmp_mod
+
     arg = parse_options(mod)
-    config.CONFIG['cfg_path'] = arg.cfg_path
-    config.CONFIG['cfg_user'] = arg.cfg_user
+
+    if arg.debug:
+        L.enable()
+
     config.CONFIG['arg'] = arg
-    mod[arg.parser_name].run()
+    try:
+        if L.on:
+            msg = 'running esmero v%s `%s` command from `%s`'
+            L.info(msg, VERSION, arg.parser_name, rootpath)
+        mod[arg.parser_name].run()
+    except EsmeroError as err:
+        L.error(err.message, exception=err)
+    except Exception as err:
+        L.error('Unhandled error: ' + err.message, exception=err)
+
+    if arg.debug:
+        fp = sys.stderr
+        if arg.debug_path:
+            try:
+                fp = open(pt.join(arg.debug_path, 'esmero.debug'), 'w')
+            except IOError as err:
+                L.error('invalid debug log directory', exception=err)
+        fp.write('[ESMERO DEBUG LOG]\n')
+        fp.write('%r\n' % L)
+        if arg.debug_path:
+            fp.close()
 
 
 if __name__ == '__main__':

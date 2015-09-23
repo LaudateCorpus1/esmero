@@ -42,6 +42,7 @@ setup(name='esmero',
           ],
       scripts=['bin/esmero'],
       install_requires=[
+          'lexor',
           'configparser>=3.3.0r2',
           'argcomplete>=0.6.7',
           'nose>=1.3',

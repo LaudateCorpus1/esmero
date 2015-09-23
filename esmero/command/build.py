@@ -1,28 +1,27 @@
 """Build
 
 Traverses through a path looking for lexor files and creates an html
-file based on the lastest configuration file read.
+file based on the latest configuration file read.
 
 """
-
 import re
 import os
 import sys
 import textwrap
-import argparse
 import glob
 import os.path as pth
 from datetime import datetime
 from lexor import core
 from lexor import lexor
 from lexor.command.to import language_style
-from esmero.command import config, error, warn
+from esmero.command import config
+from esmero.util.logging import L
 
 
 DESC = """Traverses trough the specified path looking for lexor files
-and creates an html file based on the lastest configuration file read.
+and creates an html file based on the latest configuration file read.
 
-You may build specific files by specifing their names after the path
+You may build specific files by specifying their names after the path
 is given. i.e.
 
     esmero build . file1 file2 file2
@@ -49,11 +48,11 @@ def add_parser(subp, fclass):
                       type=str,
                       help='files to be converted')
     tmpp.add_argument('--log', type=language_style,
-                      help='language in which the logs will be written')
+                      help='log language')
     tmpp.add_argument('--quiet', '-q', action='store_true',
-                      help='supress warning messages')
-    tmpp.add_argument('--nodisplay', '-n', action='store_true',
-                      help="supress output")
+                      help='suppress warning messages')
+    tmpp.add_argument('--no-display', '-n', action='store_true',
+                      help="suppress output")
     tmpp.add_argument('--force', '-f', action='store_true',
                       help="force page creation")
 
@@ -63,6 +62,7 @@ def gather_lexor_files(path, bfiles):
     files = list()
     web = list()
     cfg = config.read_config(path)
+    L.info("read configuration from %r: %r", path, cfg)
     if 'skip-dir' in cfg:
         rskip = re.compile(cfg['skip-dir'])
     else:
@@ -74,7 +74,8 @@ def gather_lexor_files(path, bfiles):
     for dirname, dirnames, filenames in os.walk(path):
         allowed = list()
         for subdir in dirnames:
-            esmero_config = os.path.exists(
+            L.info("checking for %r", '%s/%s/esmero.config' % (dirname, subdir))
+            esmero_config = pth.exists(
                 '%s/%s/esmero.config' % (dirname, subdir)
             )
             if esmero_config:
@@ -87,12 +88,12 @@ def gather_lexor_files(path, bfiles):
                 if rignore.match(name) is not None:
                     continue
                 if name.endswith('.lex'):
-                    files.append(os.path.join(dirname, name))
+                    files.append(pth.join(dirname, name))
         else:
             for name in filenames:
                 if rignore.match(name) is not None:
                     continue
-                name = os.path.join(dirname, name)
+                name = pth.join(dirname, name)
                 for bfile in bfiles:
                     if name.endswith('.lex') and bfile in name:
                         files.append(name)
@@ -106,6 +107,7 @@ def _append_queue(path, queue, files):
     """Recursive definition to gather the files in a path. """
     cfg, files, other = gather_lexor_files(path, files)
     queue.append((cfg, files))
+    L.info("appended: (%r, %r)", cfg, files)
     for path in other:
         _append_queue(path, queue, files)
 
@@ -123,6 +125,7 @@ def get_theme_templates(root):
     """Obtain the theme documents. """
     theme_list = glob.glob('%s/*.lex' % root)
     theme = dict()
+    redo = False
     for lex_file in theme_list:
         path = lex_file[:-4]
         name = pth.basename(path)
@@ -180,14 +183,14 @@ def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg
     doc.meta['__THEME__'] = theme[ver].clone_node(True)
     doc.meta['__ROOT__'] = cfg['esmero']['root']
     converter = core.Converter('lexor', 'html', 'default')
-    converter.convert(doc)
-    if parser.log:
-        converter.update_log(parser.log, False)
-    doc, log = converter.pop()
-    if log:
-        sys.stderr.write('\n')
-        logwriter.write(log, sys.stderr)
-        sys.stderr.write('... ')
+    #converter.convert(doc)
+    #if parser.log:
+    #    converter.update_log(parser.log, False)
+    #doc, log = converter.pop()
+    # if log:
+    #     sys.stderr.write('\n')
+    #     logwriter.write(log, sys.stderr)
+    #     sys.stderr.write('... ')
     docwriter.write(doc, lex_file[:-4] + '.html', 'w')
     namespace = core.get_converter_namespace()
     namespace.clear()
@@ -228,11 +231,18 @@ def build_site(arg, cfg, settings, files):
 
 def run():
     """Run the command. """
-    lexorinputs = os.environ['LEXORINPUTS']
+    lexor_inputs = os.environ.get('LEXORINPUTS', '')
     arg = config.CONFIG['arg']
     cfg = config.get_cfg(['build'])
     queue = build_lexor_list(arg.inputpath, arg.files)
+    L.info("queue: %r", queue)
     for settings, files in queue:
-        os.environ['LEXORINPUTS'] = '%s:%s' % (settings['lexor-path'], lexorinputs)
+        if lexor_inputs:
+            os.environ['LEXORINPUTS'] = '%s:%s' % (
+                settings['lexor-path'], lexor_inputs
+            )
+        else:
+            os.environ['LEXORINPUTS'] = '%s' % settings['lexor-path']
         print os.environ['LEXORINPUTS']
+        L.info('$LEXORINPUTS: %s', os.environ['LEXORINPUTS'])
         build_site(arg, cfg, settings, files)

@@ -4,14 +4,13 @@ This module is in charge of providing all the necessary settings to
 the rest of the modules in esmero.
 
 """
-from __future__ import print_function
-
-import os
 import sys
 import argparse
 import textwrap
 import json
-from esmero.command import error, import_mod
+import os.path as pth
+from esmero.command import disp, import_mod, EsmeroError
+from esmero.util.logging import L
 
 
 DESC = """View and edit a configuration file for esmero.
@@ -26,36 +25,26 @@ esmero uses for the given command.
 """
 
 CONFIG = {
-    'path': None,  # read only
-    'name': None,  # read only
+    'arg': None,       # COMMAND LINE USE ONLY
+    'path': None,      # read only
+    'name': None,      # read only
     'cfg_path': None,  # COMMAND LINE USE ONLY
-    'cfg_user': None,  # COMMAND LINE USE ONLY
-    'arg': None  # COMMAND LINE USE ONLY
 }
-
-
-def var_completer(**_):
-    """var completer. """
-    return ['SEC.KEY']
-
-
-def value_completer(**_):
-    """value completer. """
-    return ['VALUE']
 
 
 class ConfigDispAction(argparse.Action):  # pylint: disable=R0903
     """Derived argparse Action class to use when displaying the
     configuration file and location."""
     def __call__(self, parser, namespace, values, option_string=None):
-        CONFIG['cfg_user'] = namespace.cfg_user
-        CONFIG['cfg_path'] = namespace.cfg_path
-        cfg_file = read_config()
-        fname = '%s/%s' % (CONFIG['path'], CONFIG['name'])
-        print('esmero configuration file: %s' % fname)
+        path = CONFIG['path']
+        if path is None:
+            path = '.'
+        cfg_file = read_config(path)
+        fname = pth.join(CONFIG['path'], CONFIG['name'])
+        disp('esmero configuration file: %r\n', fname)
         json.dump(cfg_file, sys.stdout,
                   sort_keys=True, indent=4, separators=(',', ': '))
-        sys.stdout.write('\n')
+        disp('\n')
         exit(0)
 
 
@@ -65,10 +54,9 @@ def add_parser(subp, fclass):
                            formatter_class=fclass,
                            description=textwrap.dedent(DESC))
     tmpp.add_argument('var', type=str,
-                      help='Must be in the form of sec.key'
-                      ).completer = var_completer
+                      help='Must be in the form of sec.key')
     tmpp.add_argument('value', type=str, nargs='?', default=None,
-                      help='var value').completer = value_completer
+                      help='var value')
     tmpp.add_argument('-v', action='store_true',
                       help='print config file location')
     tmpp.add_argument('--display', action=ConfigDispAction,
@@ -76,25 +64,16 @@ def add_parser(subp, fclass):
                       help='print config file and exit')
 
 
-def read_config(path='.'):
+def read_config(path=None):
     """Read a configuration file."""
-    name = 'esmero.config'
-    if CONFIG['cfg_user']:
-        path = os.environ['HOME']
-        name = '.esmero.config'
-    elif CONFIG['cfg_path'] is None:
-        if not os.path.exists(name):
-            if 'ESMERO_CONFIG_PATH' in os.environ:
-                path = os.environ['ESMERO_CONFIG_PATH']
-            else:
-                path = os.environ['HOME']
-                name = '.esmero.config'
-    else:
+    name = 'esmero.json'
+    if path is None:
         path = CONFIG['cfg_path']
-        if not os.path.exists('%s/%s' % (path, name)):
-            error("ERROR: %s/%s does not exist.\n" % (path, name))
+    file_path = pth.join(path, name)
+    if not pth.exists(file_path):
+        raise EsmeroError("%r does not exist" % file_path)
     try:
-        with open('%s/%s' % (path, name)) as fp_:
+        with open(file_path) as fp_:
             cfg_file = json.load(fp_)
     except IOError:
         cfg_file = {}
@@ -104,9 +83,9 @@ def read_config(path='.'):
 
 
 def write_config(cfg_file):
-    "Write the configuration file. "
-    fname = '%s/%s' % (CONFIG['path'], CONFIG['name'])
-    with open(fname, 'w') as tmp:
+    """Write the configuration file. """
+    file_path = pth.join(CONFIG['path'], CONFIG['name'])
+    with open(file_path, 'w') as tmp:
         json.dump(
             cfg_file, tmp,
             sort_keys=True, indent=4, separators=(',', ': ')
@@ -114,7 +93,7 @@ def write_config(cfg_file):
 
 
 def run():
-    "Run command. "
+    """Run command. """
     arg = CONFIG['arg']
     cfg_file = read_config()
     keys = arg.var.split('.')
@@ -157,13 +136,13 @@ def update_single(cfg, name, defaults=None):
     "Helper function for get_cfg."
     if defaults:
         for var, val in defaults.iteritems():
-            cfg[name][var] = os.path.expandvars(str(val))
+            cfg[name][var] = pth.expandvars(str(val))
     else:
         try:
             mod = import_mod('esmero.command.%s' % name)
             if hasattr(mod, "DEFAULTS"):
                 for var, val in mod.DEFAULTS.iteritems():
-                    cfg[name][var] = os.path.expandvars(val)
+                    cfg[name][var] = pth.expandvars(val)
         except ImportError:
             pass
 
@@ -172,7 +151,7 @@ def _update_from_file(cfg, name, cfg_file):
     "Helper function for get_cfg."
     if name in cfg_file:
         for var, val in cfg_file[name].iteritems():
-            cfg[name][var] = os.path.expandvars(val)
+            cfg[name][var] = pth.expandvars(val)
 
 
 def _update_from_arg(cfg, argdict, key):
