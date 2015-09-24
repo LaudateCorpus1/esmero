@@ -124,7 +124,7 @@ def get_theme_templates(root):
     """Obtain the theme documents. """
     theme_list = glob.glob('%s/*.lex' % root)
     theme = dict()
-    redo = False
+    redo = True
     for lex_file in theme_list:
         path = lex_file[:-4]
         name = pth.basename(path)
@@ -142,6 +142,7 @@ def get_theme_templates(root):
             redo = True
         aux = dict()
         for theme_file in glob.iglob('%s/*.lex' % path):
+            L.info("loading theme file: %r", theme_file)
             file_name = pth.basename(theme_file)
             aux[file_name], log = lexor(theme_file)
             # Print log here
@@ -170,7 +171,7 @@ def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg
     parser.parse(text, lex_file)
     doc = parser.doc
 
-    ver = settings['template']
+    ver = settings.get('theme', '')
     doc.meta['version'] = ver
 
     if 'usepackage' in doc.meta:
@@ -179,7 +180,8 @@ def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg
         pkg = ''
 
     doc.meta['usepackage'] = ver + pkg
-    doc.meta['__THEME__'] = theme[ver].clone_node(True)
+    if ver in theme:
+        doc.meta['__THEME__'] = theme[ver].clone_node(True)
     doc.meta['__ROOT__'] = cfg['esmero']['root']
     converter = core.Converter('lexor', 'html', 'default')
     converter.convert(doc)
@@ -197,7 +199,8 @@ def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg
 
 def build_site(arg, cfg, settings, files):
     """Build the website. """
-    theme, theme_redo = get_theme_templates(settings['theme-path'])
+    theme_path = settings.get('theme-path', '')
+    theme, theme_redo = get_theme_templates(theme_path)
     parser = core.Parser('lexor', 'default')
     docwriter = core.Writer('html', 'default')
     logwriter = core.Writer('lexor', 'log')
@@ -229,8 +232,26 @@ def build_site(arg, cfg, settings, files):
 
 
 def run():
-    """Run the command. """
-    lexor_inputs = os.environ.get('LEXORINPUTS', '')
+    """Run the command.
+
+    The configuration file accepts:
+
+    theme-path: The path where all the themes reside, these are lex
+                files and they may have a folder that goes by the
+                same name (without the lex extension). In this
+                folder we put the other templates for the theme as well
+                as python files which can help in the creation of the
+                theme.
+
+    theme: The name of the theme that we want to select from the theme-path.
+
+    lexor-path: Path to where we can load python modules that are general
+                enough for the whole site.
+
+    """
+    if 'LEXORINPUTS' not in os.environ:
+        os.environ['LEXORINPUTS'] = ''
+    lexor_inputs = os.environ['LEXORINPUTS']
     arg = config.CONFIG['arg']
     cfg = config.get_cfg(['build'])
     queue = build_lexor_list(arg.inputpath, arg.files)
@@ -240,8 +261,7 @@ def run():
             os.environ['LEXORINPUTS'] = '%s:%s' % (
                 settings['lexor-path'], lexor_inputs
             )
-        else:
+        elif 'lexor-path' in settings:
             os.environ['LEXORINPUTS'] = '%s' % settings['lexor-path']
-        print os.environ['LEXORINPUTS']
         L.info('$LEXORINPUTS: %s', os.environ['LEXORINPUTS'])
         build_site(arg, cfg, settings, files)
