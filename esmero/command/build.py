@@ -10,7 +10,7 @@ import sys
 import textwrap
 import glob
 import os.path as pth
-from datetime import datetime
+from datetime import datetime as date
 from lexor import core
 from lexor import lexor
 from lexor.command.to import language_style
@@ -57,40 +57,45 @@ def add_parser(subp, fclass):
                       help="force page creation")
 
 
+def cerr(msg):
+    """Write messages to the stderr."""
+    sys.stderr.write(msg)
+
+
 def gather_lexor_files(path, bfiles):
     """Get a dictionary of lexor files and configuration files. """
     files = list()
     web = list()
     cfg = config.read_config()
     if 'skip-dir' in cfg:
-        rskip = re.compile(cfg['skip-dir'])
+        re_skip = re.compile(cfg['skip-dir'])
     else:
-        rskip = re.compile(r'_.*|[.].*')
+        re_skip = re.compile(r'_.*|[.].*')
     if 'ignore-file' in cfg:
-        rignore = re.compile(cfg['ignore-file'])
+        re_ignore = re.compile(cfg['ignore-file'])
     else:
-        rignore = re.compile(r'_.*|[.].*')
+        re_ignore = re.compile(r'_.*|[.].*')
     for dirname, dirnames, filenames in os.walk(path):
         allowed = list()
         for subdir in dirnames:
-            L.info("checking for %r", '%s/%s/esmero.config' % (dirname, subdir))
+            L.info("looking for '%s/%s/esmero.json'", dirname, subdir)
             esmero_config = pth.exists(
-                '%s/%s/esmero.config' % (dirname, subdir)
+                '%s/%s/esmero.json' % (dirname, subdir)
             )
             if esmero_config:
                 web.append('%s/%s' % (dirname, subdir))
-            elif rskip.match(subdir) is None:
+            elif re_skip.match(subdir) is None:
                 allowed.append(subdir)
 
         if len(bfiles) == 0:
             for name in filenames:
-                if rignore.match(name) is not None:
+                if re_ignore.match(name) is not None:
                     continue
                 if name.endswith('.lex'):
                     files.append(pth.join(dirname, name))
         else:
             for name in filenames:
-                if rignore.match(name) is not None:
+                if re_ignore.match(name) is not None:
                     continue
                 name = pth.join(dirname, name)
                 for bfile in bfiles:
@@ -106,7 +111,6 @@ def _append_queue(path, queue, files):
     """Recursive definition to gather the files in a path. """
     cfg, files, other = gather_lexor_files(path, files)
     queue.append((cfg, files))
-    L.info("appended: (%r, %r)", cfg, files)
     for path in other:
         _append_queue(path, queue, files)
 
@@ -120,7 +124,7 @@ def build_lexor_list(path, files):
     return queue
 
 
-def get_theme_templates(root):
+def get_theme_templates(root, log_writer):
     """Obtain the theme documents. """
     theme_list = glob.glob('%s/*.lex' % root)
     theme = dict()
@@ -130,23 +134,32 @@ def get_theme_templates(root):
         name = pth.basename(path)
         html_file = path + '.html'
         theme[name], log = lexor(lex_file)
-        # Print log here
+        if log:
+            cerr('\n')
+            log_writer.write(log, sys.stderr)
+            cerr('... ')
         redo = False
         if pth.exists(html_file):
-            date_lex = datetime.fromtimestamp(pth.getmtime(lex_file))
-            date_html = datetime.fromtimestamp(pth.getmtime(html_file))
+            date_lex = date.fromtimestamp(pth.getmtime(lex_file))
+            date_html = date.fromtimestamp(pth.getmtime(html_file))
             if date_html < date_lex:
                 redo = True
         else:
-            date_html = datetime(1, 1, 1)
+            date_html = date(1, 1, 1)
             redo = True
         aux = dict()
         for theme_file in glob.iglob('%s/*.lex' % path):
-            L.info("loading theme file: %r", theme_file)
+            cerr('loading theme file: `%s` ... ' % theme_file)
+            L.info("loading theme file: '%s'", theme_file)
             file_name = pth.basename(theme_file)
             aux[file_name], log = lexor(theme_file)
-            # Print log here
-            date_lex = datetime.fromtimestamp(pth.getmtime(theme_file))
+            if log:
+                L.info('found errors in %s', theme_file)
+                cerr('\n')
+                log_writer.write(log, sys.stderr)
+            else:
+                cerr('done\n')
+            date_lex = date.fromtimestamp(pth.getmtime(theme_file))
             if date_html < date_lex:
                 redo = True
         if redo:
@@ -165,70 +178,76 @@ def get_theme_templates(root):
     return theme, redo
 
 
-def build_file(lex_file, theme, parser, settings, docwriter, logwriter, arg, cfg):
-    with open(lex_file, 'r') as tmpf:
-        text = tmpf.read()
+def build_file(
+        lex_file, theme, parser, settings,
+        doc_writer, log_writer, arg, cfg
+        ):
+    with open(lex_file) as fp:
+        text = fp.read()
     parser.parse(text, lex_file)
     doc = parser.doc
 
     ver = settings.get('theme', '')
     doc.meta['version'] = ver
 
-    if 'usepackage' in doc.meta:
-        pkg = ',' + doc.meta['usepackage']
-    else:
-        pkg = ''
-
-    doc.meta['usepackage'] = ver + pkg
     if ver in theme:
         doc.meta['__THEME__'] = theme[ver].clone_node(True)
     doc.meta['__ROOT__'] = cfg['esmero']['root']
     converter = core.Converter('lexor', 'html', 'default')
+    converter.packages = [ver]
     converter.convert(doc)
     if parser.log:
-       converter.update_log(parser.log, False)
+        converter.update_log(parser.log, False)
     doc, log = converter.pop()
     if log:
-        sys.stderr.write('\n')
-        logwriter.write(log, sys.stderr)
-        sys.stderr.write('... ')
-    docwriter.write(doc, lex_file[:-4] + '.html', 'w')
-    namespace = core.get_converter_namespace()
-    namespace.clear()
+        cerr('\n')
+        log_writer.write(log, sys.stderr)
+        cerr('... ')
+    doc_writer.write(doc, lex_file[:-4] + '.html', 'w')
 
 
 def build_site(arg, cfg, settings, files):
     """Build the website. """
+    L.info('... COMPILING FILES')
     theme_path = settings.get('theme-path', '')
-    theme, theme_redo = get_theme_templates(theme_path)
     parser = core.Parser('lexor', 'default')
-    docwriter = core.Writer('html', 'default')
-    logwriter = core.Writer('lexor', 'log')
+    doc_writer = core.Writer('html', 'default')
+    log_writer = core.Writer('lexor', 'log')
+    theme, theme_redo = get_theme_templates(theme_path, log_writer)
     for fname in files:
-        sys.stderr.write('Checking %s ... ' % fname)
-        if theme_redo:
-            sys.stderr.write(' [THEME CHANGE]: Building ... ')
-            build_file(fname, theme, parser, settings, docwriter, logwriter, arg, cfg)
-            sys.stderr.write('done.\n')
-            continue
-        if arg.force:
-            sys.stderr.write(' [FORCE]: Building ... ')
-            build_file(fname, theme, parser, settings, docwriter, logwriter, arg, cfg)
-            sys.stderr.write('done.\n')
-            continue
+        cerr('Checking %s ... ' % fname)
+        L.info('checking %s ... ', fname)
         redo = False
         html_file = fname[:-4] + '.html'
-        if pth.exists(html_file):
-            date_lex = datetime.fromtimestamp(pth.getmtime(fname))
-            date_html = datetime.fromtimestamp(pth.getmtime(html_file))
+        if theme_redo:
+            cerr(' [THEME CHANGE]: Building ... ')
+            L.info('  [theme-change]: building ... ')
+            redo = True
+        elif arg.force:
+            cerr(' [FORCE]: Building ... ')
+            L.info('  [force]: building ... ')
+            redo = True
+        elif pth.exists(html_file):
+            date_lex = date.fromtimestamp(pth.getmtime(fname))
+            date_html = date.fromtimestamp(pth.getmtime(html_file))
             if date_html < date_lex:
+                cerr(' [FILE CHANGE]: Building ... ')
+                L.info('  [file-change]: building ... ')
                 redo = True
         else:
             redo = True
         if redo:
-            sys.stderr.write(' [FILE CHANGE]: Building ... ')
-            build_file(fname, theme, parser, settings, docwriter, logwriter, arg, cfg)
-        sys.stderr.write('done.\n')
+            build_file(
+                fname,
+                theme,
+                parser,
+                settings,
+                doc_writer,
+                log_writer,
+                arg,
+                cfg
+            )
+        cerr('done.\n')
 
 
 def run():
@@ -239,14 +258,15 @@ def run():
     theme-path: The path where all the themes reside, these are lex
                 files and they may have a folder that goes by the
                 same name (without the lex extension). In this
-                folder we put the other templates for the theme as well
-                as python files which can help in the creation of the
-                theme.
+                folder we put the other templates for the theme as
+                well as python files which can help in the creation
+                of the theme.
 
-    theme: The name of the theme that we want to select from the theme-path.
+    theme: The name of the theme that we want to select from the
+           theme-path.
 
-    lexor-path: Path to where we can load python modules that are general
-                enough for the whole site.
+    lexor-path: Path from where we can load python modules that are
+                general enough for the whole site.
 
     """
     if 'LEXORINPUTS' not in os.environ:
@@ -255,13 +275,20 @@ def run():
     arg = config.CONFIG['arg']
     cfg = config.get_cfg(['build'])
     queue = build_lexor_list(arg.inputpath, arg.files)
-    L.info("queue: %r", queue)
     for settings, files in queue:
+        if L.on:
+            L.info('-----------------------')
+            L.info('using configuration ...')
+            for key in settings:
+                L.info('   %s: %s', key, settings[key])
+            L.info('on ...')
+            for item in files:
+                L.info('     %s', item)
         if lexor_inputs:
             os.environ['LEXORINPUTS'] = '%s:%s' % (
                 settings['lexor-path'], lexor_inputs
             )
         elif 'lexor-path' in settings:
             os.environ['LEXORINPUTS'] = '%s' % settings['lexor-path']
-        L.info('$LEXORINPUTS: %s', os.environ['LEXORINPUTS'])
+        L.info('- $LEXORINPUTS: %s', os.environ['LEXORINPUTS'])
         build_site(arg, cfg, settings, files)
