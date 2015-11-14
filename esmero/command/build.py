@@ -220,18 +220,18 @@ def build_site(arg, cfg, settings, files):
         redo = False
         html_file = fname[:-4] + '.html'
         if theme_redo:
-            cerr(' [THEME CHANGE]: Building ... ')
+            cerr('[THEME CHANGE]: Building ... ')
             L.info('  [theme-change]: building ... ')
             redo = True
         elif arg.force:
-            cerr(' [FORCE]: Building ... ')
+            cerr('[FORCE]: Building ... ')
             L.info('  [force]: building ... ')
             redo = True
         elif pth.exists(html_file):
             date_lex = date.fromtimestamp(pth.getmtime(fname))
             date_html = date.fromtimestamp(pth.getmtime(html_file))
             if date_html < date_lex:
-                cerr(' [FILE CHANGE]: Building ... ')
+                cerr('[FILE CHANGE]: Building ... ')
                 L.info('  [file-change]: building ... ')
                 redo = True
         else:
